@@ -59,7 +59,46 @@ COL_POS_MAP_90to03 = {
     # 5=Validity edit failure(s), 6=Quality edit failure(s), 7=Validity and Quality edit failures
     "seq_number": (53, 60), # A one up number assigned within a reporter, to make each record unique.
 }
+"""
+COL_POS_MAP_90to03 = {
+    "year": (0, 4),
+    "respondent_id": (4, 14), # unique within agency
+    "agency_code": (14, 15), # l=OCC, 2=FRS, 3=FDIC, 4=OTS , 5=NCUA, 7=HUD, B,C,D,E,or X=State Exempts
+    "type_of_loan": (15, 16),
+    "purpose_of_loan": (16, 17),
+    "occupancy": (17, 18),
+    "amount_of_loan": (18, 23),
+    "type_of_action_taken": (23, 24), 
+    "MSA": (24, 29),
+    "state_code": (29, 31),
+    "county_code": (31, 34),
+    "census_tract_number": (34, 41),
+    "applicant_sex": (41, 42),
+    "co-applicant_sex": (42, 43)
+    
+    "applicant_race": (56, 61),
+    "co-applicant_race": (61, 66),
+    
+    "applicant_income": (43, 47), # NA includes multifamily
+    "type_of_purchaser": (47, 48),
+    "denial_reason_1": (48, 49),
+    "denial_reason_2": (49, 50),
+    "denial_reason_3": (50, 51),
+    "edit_status": (51, 52),
 
+    "property_type":(52,53),
+    "preapprovals":(53,54),
+    "applicant_ethnicity":(54,55),
+    "coapplicant_ethnicity":(55,56),
+    "rate_spread":(66,71),
+    "HOEPA Status":(71,72),
+    "Lien Status":(72,73),
+    "Sequence Number":(73,80)
+    # blank = record has no edit failures, 
+    # 5=Validity edit failure(s), 6=Quality edit failure(s), 7=Validity and Quality edit failures
+    # A one up number assigned within a reporter, to make each record unique.
+}
+"""
 RACE_ORDER = ['AAPI', 'AI/AN', 'Black', 'Hispanic', 'White', 'other','not_provided', 'NA']
 
 # None = not applicable
@@ -84,17 +123,19 @@ CODE_MAP = {
                              "4": "withdrawn_by_app",
                              "5": "closed_for_missing_info", # file closed for incompleteness,
                              "6": "purchased" # by institution
+                             #"7": "preapproval denied"
+                             #"8": "preapproved but not accepted"
                             },
     "race": {"1": "AI/AN", #"American_Indian_or_Alaskan_Native"
-            "2": "AAPI",
+            "2": "Asian",
             "3": "Black",
-            "4": "Hispanic",
+            "4": "Native Hawaiian or other PI",
             "5": "White",
-            "6": "other",
-            "7": "not_provided", # only for mail and phone apps as in-person based on name and appearance
-            "8": None # purchased loan, institutions not required, applicant is not a natural person
+            "6": "not_provided", # only for mail and phone apps as in-person based on name and appearance
+            "7": None, # purchased loan, institutions not required, applicant is not a natural person
+            "8": None # no coapplicant
             },
-    "sex": {"1": "male", "2": "female", "3": "not_provided", "4": None # same as race
+    "sex": {"1": "male", "2": "female", "3": "not_provided", "4": None, "5": None
            },
     "agency_code": {"1": "OCC", 
                     # Office of the Comptroller of the Currency
@@ -108,6 +149,13 @@ CODE_MAP = {
                 "7": "validity_and_quality_edit_failures", # not correct
                 "6": "quality_edit_failure", # not align with an expected standard 
                },
+
+    'ethnicity': {"1": "Hispanic or Latino",
+                "2": "Not Hispanic or Latino", # not correct
+                "3": "not_provided", # not correct
+                "4": None, "5": None #same as sex/race
+               },
+
 }
 
 VALIDITY_FAILURE_EDIT_MAP = {"5": "validity_edit_failure", "7": "validity_and_quality_edit_failures"}
@@ -166,7 +214,6 @@ def read_fast(file_path):
 def read_data(file_path, batch_size):
     with open(file_path, mode="r", encoding="ascii") as f:
         raw_txt = f.read()
-    
     lines = [raw_txt[i * 61: i * 61 + 61] for i in range(len(raw_txt) // 61)]
     lines = [l.rstrip("\n") for l in lines]
     assert all(np.array([len(l) for l in lines]) == 60)
@@ -296,11 +343,13 @@ def get_home_purchase_loans_and_validation(data_ca):
     print("# unmarked by edit", (~invalid_app_income["edit_status"].isin(VALIDITY_FAILURE_EDIT_MAP.values())).sum())
     print("income:", invalid_app_income)
     
-
+    x = [l for l in home_purchase_loans["amount_of_loan"] if l.isdigit() == False]
+    print("CHECK HERE")
+    print(x)
+    print(sum(~home_purchase_loans["amount_of_loan"].str.isdigit()))
     assert sum(~home_purchase_loans["amount_of_loan"].str.isdigit()) == 0
     invalid_loan_amount = home_purchase_loans.loc[home_purchase_loans["amount_of_loan"]=="00000", :]
     print("invalid_loan_amount:", invalid_loan_amount)
-
 
     invalid_tract = home_purchase_loans.loc[
         ~home_purchase_loans["census_tract_number"].str.fullmatch(r"^\d{4}\.\d{2}$") &
@@ -319,8 +368,10 @@ def get_home_purchase_loans_and_validation(data_ca):
     return home_purchase_loans, n_selected_loans
 
 def read_and_validate_data(yr, rec_cnt, batch_size, num):
-    data_file = f"{RAW_DATA_DIR}/HMDA/{yr}/HMS.U{yr}.LARS"
+    data_file = f"{RAW_DATA_DIR}/HMDA/{yr}/HMS.U{yr}.LARS.PUBLIC.DATA"
+    #data_file = f"{RAW_DATA_DIR}/HMDA/{yr}/u{yr}lar.public.dat"
     data,lines = read_data(data_file, batch_size)
+    print(data.columns)
     #assert data.shape[0] % batch_size == 0 or data.shape[0] % rec_cnt == 0
 
     #print(data.tail())
@@ -373,22 +424,22 @@ rec_cnt = 24701216
 
 """# 1999"""
 
-yr = 2003
-rec_cnt = 41579149 #31310410-2002 #22911780 
+yr = 2001
+rec_cnt = 27643163 #41579149-2003 #33630474-2004 #31310410-2002 #22911780 
 
-start = 0
-batch = 1000000
+start = 20000000
+batch = 10000000
 num = 0
 for end in range(0, rec_cnt+batch-1, batch):
     num = num + 1
     if end == 0:
         continue
-    print("Now reading: ",start,end)
+    print("Now reading: ",start,min(start+end,rec_cnt))
     if num % 100000 == 0:
         print(num, " rows processed!")
-    data_ca, lines = read_and_validate_data(yr, rec_cnt,(start,min(end,rec_cnt)), num)
+    data_ca, lines = read_and_validate_data(yr, rec_cnt,(start,min(start+end,rec_cnt)), num)
     
-    print("Now processing: ",start,end)
+    print("Now processing: ",start,min(start+end,rec_cnt))
     start = end
     gc.collect()
     home_purchase_loans, n_selected_loans = get_home_purchase_loans_and_validation(data_ca)

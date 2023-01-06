@@ -1,0 +1,6 @@
+RACE is not a one byte column - multiple (as many as all 5 bytes) can exist.
+AAPI split into Asian and PI
+Hispanic is not a race anymore but a new category called ethnicity
+Extra code for no-coapplicant
+
+
